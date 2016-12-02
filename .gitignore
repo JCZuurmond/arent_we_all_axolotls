@@ -1,0 +1,3 @@
+dataset/trainset/*
+dataset/testset/*
+dataset/validationset/*
