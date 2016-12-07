@@ -1,3 +1,5 @@
 dataset/trainset/*
 dataset/testset/*
 dataset/validationset/*
+*.npy
+*.p
