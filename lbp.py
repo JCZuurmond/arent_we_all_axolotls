@@ -14,15 +14,18 @@ Src: The code is based on the LBP example of scikit-image
 
 import csv
 import glob
+import itertools
 import os
 
 import numpy as np
 import matplotlib.pyplot as plt
+from sklearn.metrics import confusion_matrix
 import skimage
 from skimage.transform import rotate
 from skimage.feature import local_binary_pattern
 from skimage import data
 from skimage.color import label2rgb
+import pandas as pd
 import pickle
 
 
@@ -31,6 +34,7 @@ plt.rcParams['font.size'] = 9
 
 
 def kullback_leibler_divergence(p, q):
+    '''See scikit image LBP example'''
     p = np.asarray(p)
     q = np.asarray(q)
     filt = np.logical_and(p != 0, q != 0)
@@ -104,56 +108,76 @@ def train(trainset, radius, n_points, method, redo=False):
     return refs
 
 
-def validate(validationset, refs, truth, radius, n_points, method,
-             dist_func=kullback_leibler_divergence, n_bins=None):
-    '''Validates the validation set using
+def predict(images, refs, radius, n_points, method, def_score=10,
+            def_name=None, dist_func=kullback_leibler_divergence,
+            n_bins=None):
+    '''Predict the validation set using
 
     Args:
         validationset (list of str): List with path to files to be validated.
-        refs (dict): str: np.array mapping, of the labels and their representing
+        refs (dict): {str: np.array mapping}, of the labels and their representing
             lbp matrix.
-        truth (dict): Mapping of actual label per filename.
         radius (int) : Radius used for LBP.
         n_points (int) : Number of points used for LBP
-        method (str, optional): See skimage.feature.local_binary_pattern.
+        method (str): See skimage.feature.local_binary_pattern.
+        def_score (int, optional): The default distance to start comparing the
+            histograms with. Defaults to 10.
+        def_name (str, optional): The default name when comparing the
+            histograms. Defaults to None.
         dist_func(func, optional): Function to calculate distance between two
             vectors. Defaults to kull_back_leibler_divergence.
         n_bins (int, optional): Number of bins of the histogram. Defaults to
             n_points + 1.
 
     Returns:
-        ((float, int), dict, list of tuples): ((accuracy, total images count),
-            mapping of (accuracy, image count) per label, list of (actual
-            label, predicted label).
+        lst of tuple with two str: mapping of wanted label and predicted label.
+            (wanted_label, predicted_label)
     '''
     if n_bins is None:
         n_bins = n_points + 1
-    matches, matches_per_label, wanted_got = 0., {}, []
-    for image in validationset:
-        best_score = 10
-        best_name = None
-        im = skimage.io.imread(image)
-        im = skimage.color.rgb2gray(im)
-        lbp = local_binary_pattern(im, n_points, radius, METHOD)
+    predictions = []
+    for image in images:
+        best_score, best_name = def_score, def_name
+        im = skimage.color.rgb2gray(skimage.io.imread(image))
+        lbp = local_binary_pattern(im, n_points, radius, method)
         hist, _ = np.histogram(lbp, normed=True, bins=n_bins, range=(0, n_bins))
         for name, ref_hist in refs.items():
-            score = kullback_leibler_divergence(hist, ref_hist)
+            score = dist_func(hist, ref_hist)
             if score < best_score:
                 best_score = score
                 best_name = name
-        label = truth[image]
-        match = int(label == best_name)
-        matches += match
-        if not label in matches_per_label:
-            matches_per_label[label] = [match, 1]
-        else:
-            matches_per_label[label][0] += match
-            matches_per_label[label][1] += 1.
-        wanted_got.append((truth[image], best_name))
-    for k, v in matches_per_label.iteritems():
-        matches_per_label[k] = (v[0]/v[1], v[1])
-    tot_count = len(validationset)
-    return ((matches/tot_count, tot_count), matches_per_label, wanted_got)
+        predictions.append((image, best_name))
+    return predictions
+
+
+def plot_confusion_matrix(
+    cm, classes, normalize=False, title='Confusion matrix', cmap=plt.cm.Blues):
+    """
+    This function prints and plots the confusion matrix.
+    Normalization can be applied by setting `normalize=True`.
+    """
+    plt.imshow(cm, interpolation='nearest', cmap=cmap)
+    plt.title(title)
+    plt.colorbar()
+    tick_marks = np.arange(len(classes))
+    plt.xticks(tick_marks, classes, rotation=45)
+    plt.yticks(tick_marks, classes)
+
+    if normalize:
+        cm = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
+        print("Normalized confusion matrix")
+    else:
+        print('Confusion matrix, without normalization')
+    print(cm)
+
+    thresh = cm.max() / 2.
+    for i, j in itertools.product(range(cm.shape[0]), range(cm.shape[1])):
+        plt.text(j, i, cm[i, j],
+                 horizontalalignment="center",
+                 color="white" if cm[i, j] > thresh else "black")
+    plt.tight_layout()
+    plt.ylabel('True label')
+    plt.xlabel('Predicted label')
 
 
 if __name__ == '__main__':
@@ -182,39 +206,43 @@ if __name__ == '__main__':
 
     validate_result_path = 'lbp_validate_result.p'
     print 'validating ...',
+    #redo = True
     if not redo and os.path.isfile(validate_result_path):
         print 'using saved data.'
         validate_result = pickle.load(open(validate_result_path, 'rb'))
     else:
-        validate_result = validate(
-            validationset, refs, truth, radius, n_points, METHOD)
+        validate_result = predict(
+            validationset, refs, radius, n_points, METHOD)
         pickle.dump(validate_result, open(validate_result_path, 'wb'))
         print 'done.'
 
-    ((accuracy, tot_count), matches_per_label, wanted_got) = validate_result
-    print 'got an accuracy of %s for %s images' % (accuracy, tot_count)
+    validate_result = [(truth[image], pred) for (image, pred) in validate_result]
+    wanted_predicted = np.zeros(len(validate_result), dtype=[('wanted', 'a10'), ('predicted', 'a10')])
+    wanted_predicted[:] = validate_result
+    df = pd.DataFrame(wanted_predicted)
+    df['match'] = df.apply(lambda row: int(row['wanted'] == row['predicted']), axis=1)
+    print df
 
-    labels, accs, counts = [], [], []
-    for label, (acc, count) in matches_per_label.iteritems():
-        print 'got an accuracy of %s for %s images for label %s' % \
-                (acc, count, label)
-        labels.append(label)
-        accs.append(acc)
-        counts.append(count)
+    total_acc = sum(df.match)/float(len(df.match))
+    print 'got an accuracy of %s, predicted %s out of %s images correctly' \
+            % (total_acc, sum(df.match), len(df.match))
 
-    ind = np.arange(len(labels))
-    width = 0.5
+    acc_grouped_df = pd.DataFrame(columns=['group', 'acc'])
+    for i, (key, grp) in enumerate(df.groupby(['wanted'])):
+        print key, grp
+        acc = sum(grp['match'])/float(len(grp['match']))
+        acc_grouped_df.loc[i] = [key, acc]
+    print acc_grouped_df
+    ax = acc_grouped_df.plot(x='group', kind='bar', legend=False, rot=45)
+    ax.set_ylabel('accuracy')
+    plt.axhline(total_acc, color='red')
+    plt.text(0, total_acc, 'overall accuracy', color='red', fontsize=12)
+#    plt.show()
 
-    fig, ax = plt.subplots()
-    rects1 = ax.bar(ind, accs, width, color='r')
-    #rects2 = ax.bar(ind+width, counts, width, color='y')
-
-    # add some text for labels, title and axes ticks
-    ax.set_ylabel('Accuracy')
-    ax.set_title('Accuracy per label')
-    ax.set_xticks(ind+0.5*width)
-    ax.set_xticklabels(labels)
-
-    #ax.legend((rects1[0], rects2[0]), ('Men', 'Women'))
+    plt.figure()
+    class_names = np.unique(df['wanted'].values)
+    cnf_matrix = confusion_matrix(df['wanted'].values, df['predicted'].values)
+    plot_confusion_matrix(cnf_matrix, classes=class_names, #normalize=True,
+                          title='Confusion matrix')
     plt.show()
 
