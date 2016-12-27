@@ -221,7 +221,8 @@ def plot_confusion_matrix(
     plt.tight_layout()
 
 
-
+if __name__ == '__main__':
+    radius = 3
     n_points = 8*radius
     save_lbp_plot = 'figures'
     #redo = True
@@ -270,7 +271,7 @@ def plot_confusion_matrix(
                 validationset, refs, radius, n_points, METHOD, sub_divides=sub_divide)
             pickle.dump(validate_result, open(validate_result_path, 'wb'))
             print 'done.'
-        #redo = False
+        redo = False
 
         validate_result = [(truth[image], pred) for (image, pred) in validate_result]
         wanted_predicted = np.zeros(len(validate_result), dtype=[('wanted', 'a10'), ('predicted', 'a10')])
