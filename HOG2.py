@@ -45,6 +45,8 @@ blockWidth = blk
 # orientations
 orientations = 5
 
+print_metrics = True
+
 ''' main function '''
 def main():
     resultList = []
