@@ -1,10 +1,6 @@
 # Formal implementation of HOG
 # The seperate scripts from HogImplementation.ipynb tidied up
-# By Alwin Lijdsman
-
-# TODO Make it so that you can turn of the random iterations and can also easilty to 1 full implementation
-# with hand coded parameters
-# 2 don't reload full image set each time? - errors no
+# By Sebastiaan Hoekstra and Alwin Lijdsman
 
 import os
 import matplotlib.pyplot as plt
